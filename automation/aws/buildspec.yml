@@ -1,0 +1,30 @@
+version: 0.2
+env:
+  variables:
+    MY_VARIABLE: "Hello, world!"
+    HUGO_VERSION: "0.124.1"
+phases:
+  install:
+    runtime-versions:
+      python: 3.8
+    commands:
+      - echo $HUGO_VERSION
+      - apt-get update
+      - echo Installing hugo on build machine
+      - curl -L -o hugo.deb https://github.com/gohugoio/hugo/releases/download/v0.125.4/hugo_extended_0.125.4_linux-amd64.deb
+      - sudo dpkg -i hugo.deb
+  pre_build:
+    commands:
+      - echo In pre_build phase..
+      - echo Current directory is $CODEBUILD_SRC_DIR
+      - ls -la
+  build:
+    commands:
+      - hugo -v
+      - echo "Hello World 1"
+      - codebuild-breakpoint
+      - echo "Hello World 2"
+artifacts:
+  files:
+    - '**/*'
+  base-directory: public

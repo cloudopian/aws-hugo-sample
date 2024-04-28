@@ -1,0 +1,113 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Name of the project
+    Default: my-project
+Resources:
+  CodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-codebuild-role
+      Description: Role for CodeBuild
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: CodeBuildPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:/aws/codebuild/${ProjectName}
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketAcl
+                  - s3:GetBucketLocation
+                Resource:
+                  - !Sub arn:aws:s3:::codepipeline-${AWS::Region}'-*
+  CodeCommitUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Sub ${ProjectName}-codecommit-user
+      ManagedPolicyArns:
+       - arn:aws:iam::aws:policy/AWSCodeCommitPowerUser  
+  CodeCommitRepository:
+    Type: 'AWS::CodeCommit::Repository'
+    Properties:
+      RepositoryName: !Sub ${ProjectName}
+  CodeBuildProject:
+    Type: 'AWS::CodeBuild::Project'
+    Properties:
+      Name: !Ref ProjectName
+      Description: !Sub Build hugo static site for ${ProjectName}
+      TimeoutInMinutes: 15
+      QueuedTimeoutInMinutes: 30
+      ConcurrentBuildLimit: 1
+      Cache:
+        Type: NO_CACHE
+      Source:
+        Type: CODECOMMIT
+        Location: !GetAtt CodeCommitRepository.CloneUrlHttp
+        GitCloneDepth: 1
+        GitSubmodulesConfig:
+          FetchSubmodules: true
+        BuildSpec: automation/aws/buildspec.yml
+        InsecureSsl: false
+      SourceVersion: refs/heads/master
+      Artifacts:
+        Type: S3
+        Location: !Ref StaticSiteS3Bucket
+        Name: !Sub ${ProjectName}
+        Path: ""
+        Packaging: NONE
+        NamespaceType: NONE
+        OverrideArtifactName: false
+        EncryptionDisabled: false
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        ImagePullCredentialsType: CODEBUILD
+        EnvironmentVariables:
+          - Name: PROJECT_NAME
+            Value: !Ref ProjectName
+            Type: PLAINTEXT
+          - Name: S3_BUCKET
+            Value: !Ref StaticSiteS3Bucket
+            Type: PLAINTEXT
+          - Name: HUGO_VERSION
+            Value: "0.124.4"
+            Type: PLAINTEXT
+        PrivilegedMode: false
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+        S3Logs:
+          Status: DISABLED
+  StaticSiteS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${ProjectName}-static-website
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+Outputs:
+  WebsiteURL:
+    Description: URL for the website hosted on S3
+    Value: !GetAtt StaticSiteS3Bucket.WebsiteURL
